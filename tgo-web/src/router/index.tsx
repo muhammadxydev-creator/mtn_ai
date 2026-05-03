@@ -102,9 +102,17 @@ export const router = createBrowserRouter([
           {
             path: 'knowledge/qa/:id',
             element: <QAKnowledgeBaseDetail/>
+          },
+          {
+            path: 'mtn-chat',
+            element: <MtnChatPage />
           }
         ]
       }
     ]
   }
 ]);
+
+// Import and export MtnChatPage
+import MtnChatPage from '../pages/MtnChatPage';
+export { MtnChatPage };

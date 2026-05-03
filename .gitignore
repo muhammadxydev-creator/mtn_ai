@@ -1,81 +1,45 @@
 ```
 # Dependencies
-node_modules/
 .venv/
 venv/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
+node_modules/
 
-# Build and distribution artifacts
+# Build artifacts
 dist/
 build/
+target/
 *.egg-info/
 
-# Environment variables
+# Environment
 .env
 .env.local
-*.env.*
+.env.*
 
-# IDE and editor files
+# Editors
 .vscode/
 .idea/
 *.swp
 *.swo
-*.tmp
 
 # Logs
 *.log
-logs/
 
-# Coverage reports
-.coverage
-htmlcov/
-coverage/
-
-# Python specific
-*.pyc
-__pycache__/
-*.pyo
-*.pyd
-.Python
-*.so
-
-# Distribution / packaging
-.Python
-*.so
-.PyInstaller/
-
-# Testing
-.pytest_cache/
-.mypy_cache/
-
-# OS generated files
+# OS
 .DS_Store
 Thumbs.db
 
-# Docker
-.dockerignore
-
-# Poetry
-poetry.lock
-
-# Yarn
-yarn.lock
+# Testing
+.coverage
+htmlcov/
+.coverage.*
+.cache
+.pytest_cache/
+.mypy_cache/
 
 # Alembic
 alembic/versions/*.py
-
-# Local scripts and configs
-scripts/resetadmin
-public/env-config.js
-
-# GeoIP resources
-resources/geoip/*.xdb
-
-# Lock files
-poetry.lock
-package-lock.json
-yarn.lock
 ```

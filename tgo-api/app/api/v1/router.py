@@ -276,3 +276,10 @@ api_router.include_router(
     prefix="/remote-agents",
     tags=["Remote Agents"],
 )
+
+# MTN Chat endpoints (MTN Nigeria AI Chatbot)
+api_router.include_router(
+    mtn_chat.router,
+    prefix="/mtn-chat",
+    tags=["MTN Chat"],
+)

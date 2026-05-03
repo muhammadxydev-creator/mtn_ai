@@ -1,10 +1,13 @@
-"""MTN Nigeria AI Chatbot endpoints - Integrated NLP with mock APIs."""
+"""MTN Nigeria AI Chatbot endpoints - Integrated NLP with Supabase storage."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import random
+import uuid
+
+from app.services.supabase_client import get_supabase
 
 router = APIRouter()
 
@@ -56,6 +59,12 @@ class ConversationHistory(BaseModel):
     session_id: str
     started_at: datetime
     escalated: bool = False
+
+class FeedbackRequest(BaseModel):
+    """Request model for CSAT feedback."""
+    session_id: str
+    rating: int = Field(..., ge=1, le=5, description="CSAT rating 1-5")
+    comment: Optional[str] = None
 
 # In-memory session storage (replace with Supabase in production)
 SESSIONS: Dict[str, Dict[str, Any]] = {}
@@ -165,6 +174,96 @@ def generate_response(intent: str, entities: Dict[str, Any], language: str) -> t
     
     return base_response, suggestions
 
+
+async def save_message_to_supabase(
+    session_id: str,
+    role: str,
+    content: str,
+    intent: Optional[str] = None,
+    confidence: Optional[float] = None,
+    entities: Optional[Dict[str, Any]] = None,
+    language: Optional[str] = None,
+    suggestions: Optional[List[str]] = None
+):
+    """Save a message to Supabase conversations table."""
+    try:
+        supabase = get_supabase()
+        
+        # Insert message into conversations table
+        data = {
+            'session_id': session_id,
+            'role': role,
+            'content': content,
+            'intent': intent,
+            'confidence': confidence,
+            'entities': entities or {},
+            'language': language,
+            'suggestions': suggestions or [],
+            'created_at': datetime.now().isoformat()
+        }
+        
+        result = supabase.table('conversations').insert(data).execute()
+        return result
+    except Exception as e:
+        # Log error but don't fail the request
+        print(f"Error saving message to Supabase: {e}")
+        return None
+
+
+async def save_feedback_to_supabase(session_id: str, rating: int, comment: Optional[str] = None):
+    """Save CSAT feedback to Supabase feedback table."""
+    try:
+        supabase = get_supabase()
+        
+        data = {
+            'session_id': session_id,
+            'rating': rating,
+            'comment': comment,
+            'created_at': datetime.now().isoformat()
+        }
+        
+        result = supabase.table('feedback').insert(data).execute()
+        return result
+    except Exception as e:
+        print(f"Error saving feedback to Supabase: {e}")
+        return None
+
+
+async def get_conversation_from_supabase(session_id: str) -> Optional[Dict[str, Any]]:
+    """Retrieve conversation history from Supabase."""
+    try:
+        supabase = get_supabase()
+        
+        result = supabase.table('conversations').select('*').eq('session_id', session_id).order('created_at', desc=False).execute()
+        
+        if result.data:
+            messages = []
+            for row in result.data:
+                messages.append({
+                    'role': row['role'],
+                    'content': row['content'],
+                    'timestamp': row['created_at'],
+                    'intent': row.get('intent'),
+                    'confidence': row.get('confidence'),
+                    'entities': row.get('entities'),
+                    'suggestions': row.get('suggestions')
+                })
+            
+            started_at = datetime.fromisoformat(messages[0]['timestamp']) if messages else datetime.now()
+            escalated = any(row.get('intent') == 'escalate_human' for row in result.data)
+            
+            return {
+                'messages': messages,
+                'session_id': session_id,
+                'started_at': started_at,
+                'escalated': escalated
+            }
+        
+        return None
+    except Exception as e:
+        print(f"Error retrieving conversation from Supabase: {e}")
+        return None
+
 @router.post("/message", response_model=MessageResponse, tags=["MTN Chat"])
 async def send_message(request: MessageRequest):
     """
@@ -226,7 +325,7 @@ async def send_message(request: MessageRequest):
     # Step 5: Generate Response
     response_text, suggestions = generate_response(intent, entities, language)
     
-    # Store message in session
+    # Store message in session (local cache)
     session['messages'].append({
         'role': 'user',
         'content': request.message,
@@ -244,6 +343,25 @@ async def send_message(request: MessageRequest):
         'suggestions': suggestions
     })
     
+    # Save messages to Supabase (async, non-blocking)
+    await save_message_to_supabase(
+        session_id=session_id,
+        role='user',
+        content=request.message,
+        intent=intent,
+        confidence=confidence,
+        entities=entities,
+        language=language
+    )
+    
+    await save_message_to_supabase(
+        session_id=session_id,
+        role='assistant',
+        content=response_text,
+        intent=intent,
+        suggestions=suggestions
+    )
+    
     return MessageResponse(
         response=response_text,
         intent=intent,
@@ -257,6 +375,18 @@ async def send_message(request: MessageRequest):
 @router.get("/conversation/{session_id}", response_model=ConversationHistory, tags=["MTN Chat"])
 async def get_conversation(session_id: str):
     """Retrieve conversation history for a session."""
+    # Try to get from Supabase first
+    conversation = await get_conversation_from_supabase(session_id)
+    
+    if conversation:
+        return ConversationHistory(
+            messages=conversation['messages'],
+            session_id=session_id,
+            started_at=conversation['started_at'],
+            escalated=conversation['escalated']
+        )
+    
+    # Fallback to in-memory storage
     if session_id not in SESSIONS:
         raise HTTPException(status_code=404, detail="Session not found")
     
@@ -269,20 +399,27 @@ async def get_conversation(session_id: str):
     )
 
 @router.post("/feedback", tags=["MTN Chat"])
-async def submit_feedback(
-    session_id: str,
-    rating: int = Field(..., ge=1, le=5, description="CSAT rating 1-5"),
-    comment: Optional[str] = None
-):
+async def submit_feedback(request: FeedbackRequest):
     """Submit CSAT feedback for a conversation."""
-    if session_id not in SESSIONS:
-        raise HTTPException(status_code=404, detail="Session not found")
+    # Save to Supabase
+    result = await save_feedback_to_supabase(
+        session_id=request.session_id,
+        rating=request.rating,
+        comment=request.comment
+    )
     
-    # In production, store in Supabase
-    SESSIONS[session_id]['feedback'] = {
-        'rating': rating,
-        'comment': comment,
-        'submitted_at': datetime.now().isoformat()
-    }
-    
-    return {"status": "success", "message": "Thank you for your feedback!"}
+    if result:
+        return {"status": "success", "message": "Thank you for your feedback!"}
+    else:
+        # Fallback to in-memory storage
+        if request.session_id not in SESSIONS:
+            # Still accept feedback even if session doesn't exist in memory
+            pass
+        
+        SESSIONS[request.session_id]['feedback'] = {
+            'rating': request.rating,
+            'comment': request.comment,
+            'submitted_at': datetime.now().isoformat()
+        }
+        
+        return {"status": "success", "message": "Thank you for your feedback!"}

@@ -613,6 +613,16 @@ class Settings(BaseSettings):
         scheme, rest = url.split("://", 1)
         return f"postgresql+asyncpg://{rest}"
 
+    # Supabase Configuration
+    SUPABASE_URL: Optional[str] = Field(
+        default=None,
+        description="Supabase project URL"
+    )
+    SUPABASE_KEY: Optional[str] = Field(
+        default=None,
+        description="Supabase API key (anon or service_role)"
+    )
+
 
 # Create global settings instance
 settings = Settings()

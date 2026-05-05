@@ -49,6 +49,24 @@ class PlatformAIMode(str, Enum):
     OFF = "off"
 
 
+class PlatformTypeDefinition(Document):
+    """Platform type definition model for MongoDB."""
+
+    type: str = Field(..., description="Platform type key", unique=True)
+    name: str = Field(..., description="Display name in Chinese")
+    name_en: Optional[str] = Field(None, description="Display name in English")
+    is_supported: bool = Field(default=False, description="Whether this platform type is supported")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    class Settings:
+        name = "ai_platform_types"
+        indexes = [
+            [("type", 1)],
+            [("is_supported", 1)],
+        ]
+
+
 class Platform(Document):
     """Platform model for communication platforms in MongoDB."""
 

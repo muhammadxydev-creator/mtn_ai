@@ -1,19 +1,19 @@
 """MongoDB Models for the application."""
 
 from app.models.project import Project
-from app.models.platform import Platform, PlatformType, PlatformSyncStatus, PlatformAIMode
+from app.models.platform import Platform, PlatformType, PlatformSyncStatus, PlatformAIMode, PlatformTypeDefinition
 from app.models.visitor import Visitor, VisitorServiceStatus, UNASSIGNED_STATUSES
 from app.models.staff import Staff, StaffRole, StaffStatus
 from app.models.tag import Tag, TagCategory
 from app.models.visitor_tag import VisitorTag
-from app.models.visitor_session import VisitorSession
+from app.models.visitor_session import VisitorSession, SessionStatus
 from app.models.visitor_activity import VisitorActivity
 from app.models.visitor_ai_profile import VisitorAIProfile
 from app.models.visitor_ai_insight import VisitorAIInsight
 from app.models.visitor_system_info import VisitorSystemInfo
-from app.models.visitor_waiting_queue import VisitorWaitingQueue
+from app.models.visitor_waiting_queue import VisitorWaitingQueue, WaitingStatus, QueueSource
 from app.models.visitor_assignment_rule import VisitorAssignmentRule
-from app.models.visitor_assignment_history import VisitorAssignmentHistory
+from app.models.visitor_assignment_history import VisitorAssignmentHistory, AssignmentSource
 from app.models.visitor_customer_update import VisitorCustomerUpdate
 from app.models.ai_provider import AIProvider, AIProviderType
 from app.models.ai_model import AIModel, AIModelType
@@ -22,9 +22,9 @@ from app.models.project_onboarding import ProjectOnboardingProgress
 from app.models.ai_provider_default_model import AIProviderDefaultModel
 from app.models.system_setup import SystemSetup
 from app.models.store_credential import StoreCredential
-from app.models.permission import Permission
+from app.models.permission import Permission, RolePermission, ProjectRolePermission
 from app.models.channel_member import ChannelMember
-from app.models.channel_memory_clearance import ChannelMemoryClearance
+from app.models.channel_memory_clearance import ChannelMemoryClearance, ClearanceUserType
 from app.models.chat_file import ChatFile
 
 __all__ = [
@@ -33,6 +33,7 @@ __all__ = [
     "PlatformType",
     "PlatformSyncStatus",
     "PlatformAIMode",
+    "PlatformTypeDefinition",
     "Visitor",
     "VisitorServiceStatus",
     "UNASSIGNED_STATUSES",
@@ -43,13 +44,17 @@ __all__ = [
     "TagCategory",
     "VisitorTag",
     "VisitorSession",
+    "SessionStatus",
     "VisitorActivity",
     "VisitorAIProfile",
     "VisitorAIInsight",
     "VisitorSystemInfo",
     "VisitorWaitingQueue",
+    "WaitingStatus",
+    "QueueSource",
     "VisitorAssignmentRule",
     "VisitorAssignmentHistory",
+    "AssignmentSource",
     "VisitorCustomerUpdate",
     "AIProvider",
     "AIProviderType",
@@ -61,7 +66,10 @@ __all__ = [
     "SystemSetup",
     "StoreCredential",
     "Permission",
+    "RolePermission",
+    "ProjectRolePermission",
     "ChannelMember",
     "ChannelMemoryClearance",
+    "ClearanceUserType",
     "ChatFile",
 ]

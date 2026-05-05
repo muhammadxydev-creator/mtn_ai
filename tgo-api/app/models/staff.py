@@ -1,19 +1,17 @@
-"""Staff model."""
+"""Staff model for MongoDB."""
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, ForeignKey, String, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.core.database import Base
+from beanie import Document
+from pydantic import Field
 
 
 class StaffRole(str, Enum):
     """Staff role enumeration."""
-    
+
     USER = "user"
     ADMIN = "admin"
     AGENT = "agent"
@@ -21,125 +19,40 @@ class StaffRole(str, Enum):
 
 class StaffStatus(str, Enum):
     """Staff status enumeration."""
-    
+
     ONLINE = "online"
     OFFLINE = "offline"
     BUSY = "busy"
 
 
-class Staff(Base):
-    """Staff model for human users and AI agents."""
+class Staff(Document):
+    """Staff model for human users and AI agents in MongoDB."""
 
-    __tablename__ = "api_staff"
+    project_id: UUID = Field(..., description="Associated project ID")
+    username: str = Field(..., max_length=50, description="Staff username for login")
+    password_hash: str = Field(..., max_length=255, description="Hashed password")
+    name: Optional[str] = Field(None, max_length=100, description="Staff real name")
+    nickname: Optional[str] = Field(None, max_length=100, description="Staff display name")
+    avatar_url: Optional[str] = Field(None, max_length=255, description="Staff avatar URL")
+    description: Optional[str] = Field(None, max_length=500, description="Staff description for LLM assignment")
+    role: str = Field(default=StaffRole.USER.value, max_length=20, description="Staff role")
+    status: str = Field(default=StaffStatus.OFFLINE.value, max_length=20, description="Staff status")
+    is_active: bool = Field(default=True, description="Whether staff is active for service")
+    service_paused: bool = Field(default=False, description="Whether staff paused accepting new visitors")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    deleted_at: Optional[datetime] = None
 
-    # Primary key
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    class Settings:
+        name = "api_staff"
+        indexes = [
+            [("project_id", 1)],
+            [("username", 1)],
+            [("role", 1)],
+            [("status", 1)],
+            [("deleted_at", 1)],
+        ]
 
-    # Foreign keys
-    project_id: Mapped[UUID] = mapped_column(
-        ForeignKey("api_projects.id", ondelete="CASCADE"),
-        nullable=False,
-        comment="Associated project ID for multi-tenant isolation"
-    )
-
-    # Basic fields
-    username: Mapped[str] = mapped_column(
-        String(50),
-        unique=True,
-        nullable=False,
-        comment="Staff username for login"
-    )
-    password_hash: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False,
-        comment="Hashed password for authentication (bcrypt, argon2, etc.)"
-    )
-    name: Mapped[Optional[str]] = mapped_column(
-        String(100),
-        nullable=True,
-        comment="Staff real name"
-    )
-    nickname: Mapped[Optional[str]] = mapped_column(
-        String(100),
-        nullable=True,
-        comment="Staff display name"
-    )
-    avatar_url: Mapped[Optional[str]] = mapped_column(
-        String(255),
-        nullable=True,
-        comment="Staff avatar URL"
-    )
-    description: Mapped[Optional[str]] = mapped_column(
-        String(500),
-        nullable=True,
-        comment="Staff description for LLM assignment prompts"
-    )
-    role: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default="user",
-        comment="Staff role: user or agent"
-    )
-    status: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default="offline",
-        comment="Staff status: online, offline, busy"
-    )
-    
-    # Service control
-    is_active: Mapped[bool] = mapped_column(
-        nullable=False,
-        default=True,
-        comment="Whether staff is active for service (long-term switch, e.g., off-duty, resigned)"
-    )
-    service_paused: Mapped[bool] = mapped_column(
-        nullable=False,
-        default=False,
-        comment="Whether staff has temporarily paused accepting new visitors (short-term switch)"
-    )
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        nullable=False,
-        default=func.now(),
-        comment="Creation timestamp"
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        nullable=False,
-        default=func.now(),
-        onupdate=func.now(),
-        comment="Last update timestamp"
-    )
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(
-        nullable=True,
-        comment="Soft deletion timestamp"
-    )
-
-    # Relationships
-    project: Mapped["Project"] = relationship(
-        "Project",
-        back_populates="staff",
-        lazy="select"
-    )
-    
-    # Constraints
-    __table_args__ = (
-        CheckConstraint(
-            role.in_(["user", "admin", "agent"]),
-            name="chk_api_staff_role"
-        ),
-        CheckConstraint(
-            status.in_(["online", "offline", "busy"]),
-            name="chk_api_staff_status"
-        ),
-    )
-
-    def __repr__(self) -> str:
-        """String representation of the staff."""
-        return f"<Staff(id={self.id}, username='{self.username}', role='{self.role}')>"
-
-    @property
     def is_deleted(self) -> bool:
         """Check if the staff is soft deleted."""
         return self.deleted_at is not None

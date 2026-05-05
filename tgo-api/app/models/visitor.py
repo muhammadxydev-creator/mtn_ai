@@ -2,26 +2,16 @@
 
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship, foreign
-from sqlalchemy.dialects.postgresql import JSONB
+from beanie import Document, Indexed
+from pydantic import Field
 
-from app.core.database import Base
 from app.models.platform import Platform
-from app.models.project import Project
 from app.models.visitor_ai_insight import VisitorAIInsight
 from app.models.visitor_ai_profile import VisitorAIProfile
 from app.models.visitor_system_info import VisitorSystemInfo
-
-if TYPE_CHECKING:
-    from app.models.visitor_activity import VisitorActivity
-    from app.models.visitor_tag import VisitorTag
-    from app.models.tag import Tag
-    from app.models.visitor_customer_update import VisitorCustomerUpdate
-    from app.models.visitor_session import VisitorSession
 
 
 class VisitorServiceStatus(str, Enum):
@@ -52,286 +42,77 @@ class VisitorServiceStatus(str, Enum):
 UNASSIGNED_STATUSES = {VisitorServiceStatus.NEW.value, VisitorServiceStatus.CLOSED.value}
 
 
-class Visitor(Base):
+class Visitor(Document):
     """Visitor model for external users/customers."""
 
-    __tablename__ = "api_visitors"
+    class Settings:
+        name = "api_visitors"
+        indexes = [
+            "project_id",
+            "platform_id",
+            "platform_open_id",
+            "service_status",
+            "is_online",
+            "deleted_at",
+            [("project_id", 1), ("deleted_at", 1)],
+            [("platform_id", 1), ("deleted_at", 1)],
+            [("service_status", 1), ("deleted_at", 1)],
+        ]
 
     # Primary key
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    id: UUID = Field(default_factory=uuid4)
 
     # Foreign keys
-    project_id: Mapped[UUID] = mapped_column(
-        ForeignKey("api_projects.id", ondelete="CASCADE"),
-        nullable=False,
-        comment="Associated project ID for multi-tenant isolation"
-    )
-    platform_id: Mapped[UUID] = mapped_column(
-        nullable=False,
-        comment="Associated platform ID"
-    )
+    project_id: UUID = Field(..., description="Associated project ID for multi-tenant isolation")
+    platform_id: UUID = Field(..., description="Associated platform ID")
 
     # Basic fields
-    platform_open_id: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False,
-        comment="Visitor unique identifier on this platform"
-    )
-    name: Mapped[Optional[str]] = mapped_column(
-        String(100),
-        nullable=True,
-        comment="Visitor real name"
-    )
-    nickname: Mapped[Optional[str]] = mapped_column(
-        String(100),
-        nullable=True,
-        comment="Visitor nickname on this platform (English)"
-    )
-    nickname_zh: Mapped[Optional[str]] = mapped_column(
-        String(100),
-        nullable=True,
-        comment="Visitor nickname in Chinese"
-    )
-    avatar_url: Mapped[Optional[str]] = mapped_column(
-        String(255),
-        nullable=True,
-        comment="Visitor avatar URL on this platform"
-    )
-    phone_number: Mapped[Optional[str]] = mapped_column(
-        String(30),
-        nullable=True,
-        comment="Visitor phone number on this platform"
-    )
-    email: Mapped[Optional[str]] = mapped_column(
-        String(255),
-        nullable=True,
-        comment="Visitor email on this platform"
-    )
-    company: Mapped[Optional[str]] = mapped_column(
-        String(255),
-        nullable=True,
-        comment="Visitor company or organization"
-    )
-    job_title: Mapped[Optional[str]] = mapped_column(
-        String(255),
-        nullable=True,
-        comment="Visitor job title or position"
-    )
-    source: Mapped[Optional[str]] = mapped_column(
-        String(255),
-        nullable=True,
-        comment="Acquisition source describing how the visitor found us"
-    )
-    note: Mapped[Optional[str]] = mapped_column(
-        Text,
-        nullable=True,
-        comment="Additional notes about the visitor"
-    )
-    custom_attributes: Mapped[dict[str, str | None]] = mapped_column(
-        JSONB,
-        nullable=False,
-        default=dict,
-        comment="Arbitrary custom attributes set by staff"
-    )
+    platform_open_id: str = Field(..., max_length=255, description="Visitor unique identifier on this platform")
+    name: Optional[str] = Field(None, max_length=100, description="Visitor real name")
+    nickname: Optional[str] = Field(None, max_length=100, description="Visitor nickname on this platform (English)")
+    nickname_zh: Optional[str] = Field(None, max_length=100, description="Visitor nickname in Chinese")
+    avatar_url: Optional[str] = Field(None, max_length=255, description="Visitor avatar URL on this platform")
+    phone_number: Optional[str] = Field(None, max_length=30, description="Visitor phone number on this platform")
+    email: Optional[str] = Field(None, max_length=255, description="Visitor email on this platform")
+    company: Optional[str] = Field(None, max_length=255, description="Visitor company or organization")
+    job_title: Optional[str] = Field(None, max_length=255, description="Visitor job title or position")
+    source: Optional[str] = Field(None, max_length=255, description="Acquisition source describing how the visitor found us")
+    note: Optional[str] = Field(None, description="Additional notes about the visitor")
+    custom_attributes: dict = Field(default_factory=dict, description="Arbitrary custom attributes set by staff")
 
     # Activity tracking
-    first_visit_time: Mapped[datetime] = mapped_column(
-        nullable=False,
-        default=datetime.utcnow,
-        server_default=func.now(),
-        comment="When the visitor first accessed the system"
-    )
-    last_visit_time: Mapped[datetime] = mapped_column(
-        nullable=False,
-        default=datetime.utcnow,
-        server_default=func.now(),
-        comment="Visitor most recent activity/visit time"
-    )
-    last_message_at: Mapped[Optional[datetime]] = mapped_column(
-        nullable=True,
-        comment="Time of the last message in the channel"
-    )
-    visitor_send_count: Mapped[int] = mapped_column(
-        nullable=False,
-        default=0,
-        comment="Total number of messages sent by the visitor"
-    )
-    last_message_seq: Mapped[int] = mapped_column(
-        nullable=False,
-        default=0,
-        comment="Sequence number of the last message in the channel"
-    )
-    last_client_msg_no: Mapped[Optional[str]] = mapped_column(
-        String(100),
-        nullable=True,
-        comment="Client message number of the last message in the channel"
-    )
-    is_last_message_from_visitor: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        comment="Whether the last message in the channel was sent by the visitor"
-    )
-    is_last_message_from_ai: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        comment="Whether the last message in the channel was sent by an AI"
-    )
-    last_offline_time: Mapped[Optional[datetime]] = mapped_column(
-        nullable=True,
-        comment="Most recent time visitor went offline (NULL when never offline or currently online)"
-    )
-    is_online: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        comment="Whether the visitor is currently online/active"
-    )
-    ai_disabled: Mapped[Optional[bool]] = mapped_column(
-        Boolean,
-        nullable=True,
-        default=None,
-        comment="Whether AI responses are disabled for this visitor"
-    )
-    ai_fallback_retry_count: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-        server_default="0",
-        comment="Number of failed AI fallback attempts"
-    )
+    first_visit_time: datetime = Field(default_factory=datetime.utcnow, description="When the visitor first accessed the system")
+    last_visit_time: datetime = Field(default_factory=datetime.utcnow, description="Visitor most recent activity/visit time")
+    last_message_at: Optional[datetime] = Field(None, description="Time of the last message in the channel")
+    visitor_send_count: int = Field(0, description="Total number of messages sent by the visitor")
+    last_message_seq: int = Field(0, description="Sequence number of the last message in the channel")
+    last_client_msg_no: Optional[str] = Field(None, max_length=100, description="Client message number of the last message in the channel")
+    is_last_message_from_visitor: bool = Field(False, description="Whether the last message in the channel was sent by the visitor")
+    is_last_message_from_ai: bool = Field(False, description="Whether the last message in the channel was sent by an AI")
+    last_offline_time: Optional[datetime] = Field(None, description="Most recent time visitor went offline (NULL when never offline or currently online)")
+    is_online: bool = Field(False, description="Whether the visitor is currently online/active")
+    ai_disabled: Optional[bool] = Field(None, description="Whether AI responses are disabled for this visitor")
+    ai_fallback_retry_count: int = Field(0, description="Number of failed AI fallback attempts")
     
     # Locale and network info
-    timezone: Mapped[Optional[str]] = mapped_column(
-        String(50),
-        nullable=True,
-        comment="Visitor timezone (e.g., 'Asia/Shanghai', 'America/New_York')"
-    )
-    language: Mapped[Optional[str]] = mapped_column(
-        String(10),
-        nullable=True,
-        comment="Visitor preferred language code (e.g., 'en', 'zh-CN')"
-    )
-    ip_address: Mapped[Optional[str]] = mapped_column(
-        String(45),
-        nullable=True,
-        comment="Visitor IP address (supports both IPv4 and IPv6)"
-    )
+    timezone: Optional[str] = Field(None, max_length=50, description="Visitor timezone (e.g., 'Asia/Shanghai', 'America/New_York')")
+    language: Optional[str] = Field(None, max_length=10, description="Visitor preferred language code (e.g., 'en', 'zh-CN')")
+    ip_address: Optional[str] = Field(None, max_length=45, description="Visitor IP address (supports both IPv4 and IPv6)")
     
     # Geolocation (derived from IP address)
-    geo_country: Mapped[Optional[str]] = mapped_column(
-        String(100),
-        nullable=True,
-        comment="Country name derived from IP address"
-    )
-    geo_country_code: Mapped[Optional[str]] = mapped_column(
-        String(2),
-        nullable=True,
-        comment="ISO 3166-1 alpha-2 country code (e.g., 'US', 'CN')"
-    )
-    geo_region: Mapped[Optional[str]] = mapped_column(
-        String(100),
-        nullable=True,
-        comment="Region/state/province name"
-    )
-    geo_city: Mapped[Optional[str]] = mapped_column(
-        String(100),
-        nullable=True,
-        comment="City name"
-    )
-    geo_isp: Mapped[Optional[str]] = mapped_column(
-        String(100),
-        nullable=True,
-        comment="Internet Service Provider (available with ip2region)"
-    )
+    geo_country: Optional[str] = Field(None, max_length=100, description="Country name derived from IP address")
+    geo_country_code: Optional[str] = Field(None, max_length=2, description="ISO 3166-1 alpha-2 country code (e.g., 'US', 'CN')")
+    geo_region: Optional[str] = Field(None, max_length=100, description="Region/state/province name")
+    geo_city: Optional[str] = Field(None, max_length=100, description="City name")
+    geo_isp: Optional[str] = Field(None, max_length=100, description="Internet Service Provider (available with ip2region)")
     
     # Service status
-    service_status: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default=VisitorServiceStatus.NEW.value,
-        comment="Service status: new, queued, active, closed"
-    )
+    service_status: str = Field(VisitorServiceStatus.NEW.value, max_length=20, description="Service status: new, queued, active, closed")
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        nullable=False,
-        default=func.now(),
-        comment="Creation timestamp"
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        nullable=False,
-        default=func.now(),
-        onupdate=func.now(),
-        comment="Last update timestamp"
-    )
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(
-        nullable=True,
-        comment="Soft deletion timestamp"
-    )
-
-    # Relationships
-    project: Mapped["Project"] = relationship(
-        "Project",
-        back_populates="visitors",
-        lazy="select"
-    )
-
-    platform: Mapped["Platform"] = relationship(
-        "Platform",
-        primaryjoin="foreign(Visitor.platform_id) == Platform.id",
-        foreign_keys="Visitor.platform_id",
-        back_populates="visitors",
-        lazy="select"
-    )
-
-    visitor_tags: Mapped[List["VisitorTag"]] = relationship(
-        "VisitorTag",
-        back_populates="visitor",
-        cascade="all, delete-orphan",
-        lazy="select"
-    )
-
-    ai_profile: Mapped[Optional["VisitorAIProfile"]] = relationship(
-        "VisitorAIProfile",
-        back_populates="visitor",
-        cascade="all, delete-orphan",
-        lazy="select",
-        uselist=False
-    )
-    ai_insight: Mapped[Optional["VisitorAIInsight"]] = relationship(
-        "VisitorAIInsight",
-        back_populates="visitor",
-        cascade="all, delete-orphan",
-        lazy="select",
-        uselist=False
-    )
-    system_info: Mapped[Optional["VisitorSystemInfo"]] = relationship(
-        "VisitorSystemInfo",
-        back_populates="visitor",
-        cascade="all, delete-orphan",
-        lazy="select",
-        uselist=False
-    )
-    activities: Mapped[List["VisitorActivity"]] = relationship(
-        "VisitorActivity",
-        back_populates="visitor",
-        cascade="all, delete-orphan",
-        lazy="select"
-    )
-    customer_updates: Mapped[List["VisitorCustomerUpdate"]] = relationship(
-        "VisitorCustomerUpdate",
-        back_populates="visitor",
-        cascade="all, delete-orphan",
-        lazy="select",
-    )
-    sessions: Mapped[List["VisitorSession"]] = relationship(
-        "VisitorSession",
-        back_populates="visitor",
-        cascade="all, delete-orphan",
-        lazy="select",
-    )
+    created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
+    updated_at: datetime = Field(default_factory=datetime.utcnow, description="Last update timestamp")
+    deleted_at: Optional[datetime] = Field(None, description="Soft deletion timestamp")
 
     def __repr__(self) -> str:
         """String representation of the visitor."""
@@ -344,16 +125,6 @@ class Visitor(Base):
         return self.deleted_at is not None
 
     @property
-    def platform_type(self) -> Optional[str]:
-        """Convenience accessor for the associated platform type.
-        Returns the platform.type string (e.g., 'website', 'wechat') when available.
-        """
-        try:
-            return self.platform.type if self.platform is not None else None
-        except Exception:
-            return None
-
-    @property
     def display_name(self) -> str:
         """Get the best available display name for the visitor."""
         return self.name or self.nickname or self.platform_open_id
@@ -362,15 +133,6 @@ class Visitor(Base):
     def is_unassigned(self) -> bool:
         """Check if visitor is unassigned (can be assigned to staff)."""
         return self.service_status in UNASSIGNED_STATUSES
-
-    @property
-    def tags(self) -> List["Tag"]:
-        """Get active tags for the visitor."""
-        return [
-            vt.tag 
-            for vt in self.visitor_tags 
-            if vt.tag and vt.deleted_at is None and vt.tag.deleted_at is None
-        ]
 
     def set_status_queued(self) -> None:
         """Set visitor status to QUEUED."""

@@ -1,142 +1,50 @@
-"""Tag model."""
+"""Tag model for MongoDB."""
 
 import base64
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer, String, UniqueConstraint, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.core.database import Base
+from beanie import Document
+from pydantic import Field
 
 
 class TagCategory(str, Enum):
     """Tag category enumeration."""
-    
+
     VISITOR = "visitor"
     KNOWLEDGE = "knowledge"
 
 
-class Tag(Base):
-    """Tag model for categorization and labeling system."""
+class Tag(Document):
+    """Tag model for categorization and labeling system in MongoDB."""
 
-    __tablename__ = "api_tags"
+    name: str = Field(..., max_length=50, description="Tag name (English)")
+    name_zh: Optional[str] = Field(None, max_length=50, description="Tag name in Chinese")
+    project_id: UUID = Field(..., description="Associated project ID")
+    category: str = Field(..., max_length=20, description="Tag category: visitor or knowledge")
+    weight: int = Field(default=0, ge=0, le=10, description="Tag importance/priority weight")
+    color: Optional[str] = Field(None, max_length=20, description="Tag color")
+    description: Optional[str] = Field(None, max_length=255, description="Tag description")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    deleted_at: Optional[datetime] = None
 
-    # Primary key (Base64 encoded ID)
-    id: Mapped[str] = mapped_column(
-        String(255),
-        primary_key=True,
-        comment="Base64 encoded ID: base64_encode(name + '@' + category)"
-    )
+    class Settings:
+        name = "api_tags"
+        indexes = [
+            [("project_id", 1)],
+            [("category", 1)],
+            [("deleted_at", 1)],
+            [("project_id", 1), ("name", 1)],
+        ]
 
-    # Foreign keys
-    project_id: Mapped[UUID] = mapped_column(
-        ForeignKey("api_projects.id", ondelete="CASCADE"),
-        nullable=False,
-        comment="Associated project ID for multi-tenant isolation"
-    )
+    def __init__(self, **data):
+        if "id" not in data and "name" in data and "category" in data:
+            data["id"] = self.generate_id(data["name"], data["category"])
+        super().__init__(**data)
 
-    # Basic fields
-    name: Mapped[str] = mapped_column(
-        String(50),
-        nullable=False,
-        comment="Tag name (English)"
-    )
-    name_zh: Mapped[Optional[str]] = mapped_column(
-        String(50),
-        nullable=True,
-        comment="Tag name in Chinese"
-    )
-    category: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        comment="Tag category: visitor (for customer categorization) or knowledge (for content categorization)"
-    )
-    weight: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-        comment="Tag importance/priority weight (0-10, higher values indicate higher priority)"
-    )
-    color: Mapped[Optional[str]] = mapped_column(
-        String(20),
-        nullable=True,
-        comment="Tag color"
-    )
-    description: Mapped[Optional[str]] = mapped_column(
-        String(255),
-        nullable=True,
-        comment="Tag description"
-    )
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        nullable=False,
-        default=func.now(),
-        comment="Creation timestamp"
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        nullable=False,
-        default=func.now(),
-        onupdate=func.now(),
-        comment="Last update timestamp"
-    )
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(
-        nullable=True,
-        comment="Soft deletion timestamp"
-    )
-
-    # Relationships
-    project: Mapped["Project"] = relationship(
-        "Project",
-        back_populates="tags",
-        lazy="select"
-    )
-    
-    visitor_tags: Mapped[List["VisitorTag"]] = relationship(
-        "VisitorTag",
-        back_populates="tag",
-        cascade="all, delete-orphan",
-        lazy="select"
-    )
-
-    # Constraints
-    __table_args__ = (
-        UniqueConstraint(
-            "project_id", "name",
-            name="uk_api_tags_project_name"
-        ),
-        CheckConstraint(
-            category.in_(["visitor", "knowledge"]),
-            name="chk_api_tags_category"
-        ),
-        CheckConstraint(
-            "weight >= 0 AND weight <= 10",
-            name="chk_api_tags_weight"
-        ),
-    )
-
-    def __init__(self, name: str, category: TagCategory, project_id: UUID, **kwargs):
-        """Initialize tag with auto-generated Base64 ID."""
-        # Generate Base64 encoded ID
-        id_string = f"{name}@{category.value}"
-        encoded_id = base64.b64encode(id_string.encode()).decode()
-        
-        super().__init__(
-            id=encoded_id,
-            name=name,
-            category=category,
-            project_id=project_id,
-            **kwargs
-        )
-
-    def __repr__(self) -> str:
-        """String representation of the tag."""
-        return f"<Tag(id='{self.id}', name='{self.name}', category='{self.category}')>"
-
-    @property
     def is_deleted(self) -> bool:
         """Check if the tag is soft deleted."""
         return self.deleted_at is not None

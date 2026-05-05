@@ -6,7 +6,8 @@ import uuid
 from datetime import datetime
 from typing import Optional, List, Tuple
 
-from sqlalchemy.orm import Session
+from beanie import PydanticObjectId
+from bson import ObjectId
 
 from app.core.logging import get_logger
 from app.models import (
@@ -113,7 +114,6 @@ def resolve_visitor_nickname(
 
 
 async def ensure_visitor_channel(
-    db: Session,
     visitor: Visitor,
     platform: Platform,
 ) -> None:
@@ -126,36 +126,31 @@ async def ensure_visitor_channel(
     subscribers = [str(visitor.id)+"-vtr"]
     need_create_member = False
 
-    # Phase 1: DB operations in a short transaction
+    # Phase 1: DB operations
     try:
-        existing_visitor_member = (
-            db.query(ChannelMember)
-            .filter(
-                ChannelMember.project_id == platform.project_id,
-                ChannelMember.channel_id == channel_id,
-                ChannelMember.member_id == visitor.id,
-                ChannelMember.deleted_at.is_(None),
-            )
-            .first()
+        # Convert visitor.id to ObjectId if it's a string
+        visitor_id_obj = visitor.id if isinstance(visitor.id, ObjectId) else ObjectId(str(visitor.id))
+        platform_id_obj = platform.id if isinstance(platform.id, ObjectId) else ObjectId(str(platform.id))
+        
+        existing_visitor_member = await ChannelMember.find_one(
+            ChannelMember.project_id == platform_id_obj,
+            ChannelMember.channel_id == channel_id,
+            ChannelMember.member_id == visitor_id_obj,
+            ChannelMember.deleted_at == None,
         )
 
         if not existing_visitor_member:
             visitor_member = ChannelMember(
-                project_id=platform.project_id,
+                project_id=platform_id_obj,
                 channel_id=channel_id,
                 channel_type=CHANNEL_TYPE_CUSTOMER_SERVICE,
-                member_id=visitor.id,
+                member_id=visitor_id_obj,
                 member_type=MEMBER_TYPE_VISITOR,
             )
-            db.add(visitor_member)
-            db.commit()
+            await visitor_member.insert()
             need_create_member = True
 
     except Exception as e:
-        try:
-            db.rollback()
-        except Exception:
-            pass
         logger.error(f"Failed to create ChannelMember for visitor: {e}")
         raise
 
@@ -183,7 +178,6 @@ async def ensure_visitor_channel(
 
 
 async def create_visitor_with_channel(
-    db: Session,
     platform: Platform,
     platform_open_id: Optional[str] = None,
     name: Optional[str] = None,
@@ -215,9 +209,13 @@ async def create_visitor_with_channel(
     
     geo_location = geoip_service.lookup(ip_address)
 
+    # Convert platform IDs to ObjectId
+    platform_id_obj = platform.id if isinstance(platform.id, ObjectId) else ObjectId(str(platform.id))
+    project_id_obj = platform.project_id if isinstance(platform.project_id, ObjectId) else ObjectId(str(platform.project_id))
+
     visitor = Visitor(
-        project_id=platform.project_id,
-        platform_id=platform.id,
+        project_id=project_id_obj,
+        platform_id=platform_id_obj,
         platform_open_id=initial_platform_open_id,
         name=name,
         nickname=resolved_nickname,
@@ -241,35 +239,40 @@ async def create_visitor_with_channel(
         first_visit_time=datetime.utcnow(),
         last_visit_time=datetime.utcnow(),
     )
-    db.add(visitor)
+    await visitor.insert()
     
     if use_visitor_id_as_open_id:
-        db.flush()
         visitor.platform_open_id = str(visitor.id) + "-vtr"
-    
-    db.commit()
-    db.refresh(visitor)
+        await visitor.save()
 
-    await ensure_visitor_channel(db, visitor, platform)
+    await ensure_visitor_channel(visitor, platform)
     return visitor
 
 
-def upsert_visitor_system_info(
-    db: Session,
+async def upsert_visitor_system_info(
     visitor: Visitor,
     platform: Platform,
     system_info_payload: Optional[VisitorSystemInfoRequest],
 ) -> bool:
     """Create or update the visitor's system info record."""
-    system_info = visitor.system_info
+    # Convert IDs to ObjectId
+    visitor_id_obj = visitor.id if isinstance(visitor.id, ObjectId) else ObjectId(str(visitor.id))
+    platform_id_obj = platform.id if isinstance(platform.id, ObjectId) else ObjectId(str(platform.id))
+    project_id_obj = platform.project_id if isinstance(platform.project_id, ObjectId) else ObjectId(str(platform.project_id))
+    
+    # Find existing system info for this visitor
+    system_info = await VisitorSystemInfo.find_one(
+        VisitorSystemInfo.visitor_id == visitor_id_obj,
+        VisitorSystemInfo.deleted_at == None,
+    )
+    
     created = False
     if not system_info:
         system_info = VisitorSystemInfo(
-            project_id=platform.project_id,
-            visitor_id=visitor.id,
+            project_id=project_id_obj,
+            visitor_id=visitor_id_obj,
         )
-        db.add(system_info)
-        visitor.system_info = system_info
+        await system_info.insert()
         created = True
 
     changed = created
@@ -287,6 +290,9 @@ def upsert_visitor_system_info(
         if field in info_data and getattr(system_info, field) != info_data[field]:
             setattr(system_info, field, info_data[field])
             changed = True
+    
+    if changed:
+        await system_info.save()
 
     return changed
 

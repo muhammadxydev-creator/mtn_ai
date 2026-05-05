@@ -1,54 +1,46 @@
-"""AI Model catalog (global) model."""
+"""AIModel model for MongoDB."""
 
 from datetime import datetime
-from typing import List, Optional
-from uuid import UUID, uuid4
+from enum import Enum
+from typing import Optional
+from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.core.database import Base
+from beanie import Document
+from pydantic import Field
 
 
-class AIModel(Base):
-    """Concrete AI models supported by each provider (global, not project-scoped)."""
+class AIModelType(str, Enum):
+    """AI Model type enumeration."""
+    CHAT = "chat"
+    COMPLETION = "completion"
+    EMBEDDING = "embedding"
+    IMAGE = "image"
+    AUDIO = "audio"
 
-    __tablename__ = "api_ai_models"
 
-    # PK
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+class AIModel(Document):
+    """AIModel model for AI models in MongoDB."""
 
-    # Foreign keys
-    provider_id: Mapped[Optional[UUID]] = mapped_column(
-        ForeignKey("api_ai_providers.id", ondelete="CASCADE"),
-        nullable=True,
-        comment="Associated provider ID"
-    )
+    provider_id: UUID = Field(..., description="Associated AI provider ID")
+    project_id: UUID = Field(..., description="Associated project ID")
+    name: str = Field(..., max_length=200, description="Model name")
+    model_type: str = Field(default=AIModelType.CHAT.value, max_length=50, description="Model type")
+    is_active: bool = Field(default=True, description="Whether model is active")
+    config: Optional[dict] = Field(default_factory=dict, description="Model-specific configuration")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    deleted_at: Optional[datetime] = None
 
-    # Basic fields
-    provider: Mapped[str] = mapped_column(String(50), nullable=False, comment="Provider key (openai, anthropic, dashscope, azure_openai)")
-    model_id: Mapped[str] = mapped_column(String(100), nullable=False, comment="Model identifier (e.g., gpt-4, claude-3-opus, qwen-max)")
-    model_name: Mapped[str] = mapped_column(String(100), nullable=False, comment="Display name for the model")
-    # chat | embedding
-    model_type: Mapped[str] = mapped_column(String(20), nullable=False, default="chat", index=True, comment="Model type: chat or embedding")
-    description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="Optional description of the model")
+    class Settings:
+        name = "api_ai_models"
+        indexes = [
+            [("provider_id", 1)],
+            [("project_id", 1)],
+            [("model_type", 1)],
+            [("is_active", 1)],
+            [("deleted_at", 1)],
+        ]
 
-    capabilities: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True, comment="Model capabilities JSON, e.g., {vision: true, function_calling: true}")
-    context_window: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="Context window size (tokens)")
-    max_tokens: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="Maximum output tokens")
-
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, comment="Whether this model is enabled")
-    store_resource_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="Store resource ID for models installed from store")
-
-    # Relationships
-    ai_provider: Mapped[Optional["AIProvider"]] = relationship("AIProvider", back_populates="models")
-
-    # Timestamps (soft delete)
-    created_at: Mapped[datetime] = mapped_column(nullable=False, default=func.now(), comment="Creation timestamp")
-    updated_at: Mapped[datetime] = mapped_column(nullable=False, default=func.now(), onupdate=func.now(), comment="Last update timestamp")
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(nullable=True, comment="Soft deletion timestamp")
-
-    def __repr__(self) -> str:  # pragma: no cover - debug repr
-        return f"<AIModel(id={self.id}, provider={self.provider}, model_id={self.model_id})>"
-
+    def is_deleted(self) -> bool:
+        """Check if the model is soft deleted."""
+        return self.deleted_at is not None

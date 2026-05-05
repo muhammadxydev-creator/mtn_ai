@@ -1,162 +1,166 @@
-"""Database connection and session management."""
+"""MongoDB database connection and session management using Motor and Beanie."""
 
-from typing import AsyncGenerator, Generator
-
-from sqlalchemy import create_engine, event
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from typing import AsyncGenerator, Optional
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from beanie import init_beanie
+from fastapi import Depends, HTTPException, status
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.models import Staff
 
 logger = get_logger("database")
 
-
-class Base(DeclarativeBase):
-    """Base class for all SQLAlchemy models."""
-    pass
+# MongoDB client
+mongodb_client: AsyncIOMotorClient = None
 
 
-# Synchronous database engine and session
-sync_engine = create_engine(
-    settings.database_url_sync,
-    pool_size=settings.DATABASE_POOL_SIZE,
-    max_overflow=settings.DATABASE_MAX_OVERFLOW,
-    pool_timeout=settings.DATABASE_POOL_TIMEOUT,
-    pool_recycle=settings.DATABASE_POOL_RECYCLE,
-    echo=False,
-)
-
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=sync_engine,
-)
-
-# Asynchronous database engine and session
-async_engine = create_async_engine(
-    settings.database_url_async,
-    pool_size=settings.DATABASE_POOL_SIZE,
-    max_overflow=settings.DATABASE_MAX_OVERFLOW,
-    pool_timeout=settings.DATABASE_POOL_TIMEOUT,
-    pool_recycle=settings.DATABASE_POOL_RECYCLE,
-    echo=False,
-)
-
-AsyncSessionLocal = async_sessionmaker(
-    async_engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
-
-
-# Database event listeners for logging
-@event.listens_for(sync_engine, "connect")
-def set_sqlite_pragma(dbapi_connection, connection_record):
-    """Set database connection parameters."""
-    from app.core.logging import startup_log
-    startup_log("✅ Database connected")
-
-
-@event.listens_for(sync_engine, "checkout")
-def receive_checkout(dbapi_connection, connection_record, connection_proxy):
-    """Log database connection checkout."""
-    logger.debug("Database connection checked out from pool")
-
-
-@event.listens_for(sync_engine, "checkin")
-def receive_checkin(dbapi_connection, connection_record):
-    """Log database connection checkin."""
-    logger.debug("Database connection returned to pool")
-
-
-def get_db() -> Generator[Session, None, None]:
+async def get_db() -> AsyncGenerator[AsyncIOMotorDatabase, None]:
     """
-    Dependency to get synchronous database session.
+    Dependency to get MongoDB database instance.
     
     Yields:
-        Session: SQLAlchemy database session
+        AsyncIOMotorDatabase: MongoDB database instance
     """
-    db = SessionLocal()
+    if mongodb_client is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database not initialized"
+        )
+    db = mongodb_client[settings.MONGODB_DB_NAME]
     try:
-        logger.debug("Creating database session")
+        logger.debug("Getting MongoDB database instance")
         yield db
-    except Exception as e:
-        logger.error(f"Database session error: {e}")
-        db.rollback()
-        raise
     finally:
-        logger.debug("Closing database session")
-        db.close()
+        logger.debug("Releasing MongoDB database instance")
 
 
-async def get_async_db() -> AsyncGenerator[AsyncSession, None]:
+async def get_current_project_id(current_user: Staff = Depends(lambda: None)) -> str:
     """
-    Dependency to get asynchronous database session.
-    
-    Yields:
-        AsyncSession: SQLAlchemy async database session
+    Dependency to get current project ID from authenticated user.
+    This is a placeholder - actual implementation depends on auth context.
     """
-    async with AsyncSessionLocal() as session:
-        try:
-            logger.debug("Creating async database session")
-            yield session
-        except Exception as e:
-            logger.error(f"Async database session error: {e}")
-            await session.rollback()
-            raise
-        finally:
-            logger.debug("Closing async database session")
-            await session.close()
+    if hasattr(current_user, 'project_id'):
+        return str(current_user.project_id)
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="User not authenticated or no project_id"
+    )
 
 
 async def init_db() -> None:
-    """Initialize database tables."""
-    logger.info("Initializing database tables")
-    async with async_engine.begin() as conn:
-        # Import all models to ensure they are registered
-        from app.models import (  # noqa: F401
-            assignment,
-            platform,
-            project,
-            staff,
-            tag,
-            visitor,
-            visitor_tag,
-            ai_provider,
-            ai_model,
-            ai_provider_default_model,
-            project_ai_config,
-            system_setup,
-        )
-
-        # Create all tables
-        await conn.run_sync(Base.metadata.create_all)
+    """Initialize MongoDB connection and Beanie ODM."""
+    global mongodb_client
     
-    logger.info("Database tables initialized successfully")
+    logger.info(f"Connecting to MongoDB: {settings.MONGODB_URL}")
+    
+    try:
+        # Create MongoDB client
+        mongodb_client = AsyncIOMotorClient(settings.MONGODB_URL)
+        
+        # Test connection
+        await mongodb_client.admin.command('ping')
+        logger.info("✅ MongoDB connected successfully")
+        
+        # Initialize Beanie with all document models
+        from app.models import (
+            Visitor,
+            Platform,
+            Project,
+            Staff,
+            Tag,
+            AIProvider,
+            AIModel,
+            SystemSetup,
+            VisitorSession,
+            VisitorActivity,
+            VisitorAssignmentRule,
+            VisitorWaitingQueue,
+            VisitorTag,
+            VisitorCustomerUpdate,
+            VisitorAIProfile,
+            VisitorAIInsight,
+            VisitorSystemInfo,
+            VisitorAssignmentHistory,
+            ChatFile,
+            Permission,
+            ChannelMember,
+            ChannelMemoryClearance,
+            ProjectAIConfig,
+            AIProviderDefaultModel,
+            ProjectOnboardingProgress,
+            StoreCredential,
+        )
+        
+        # Get the database
+        db = mongodb_client[settings.MONGODB_DB_NAME]
+        
+        # Initialize Beanie with all document models
+        await init_beanie(
+            database=db,
+            document_models=[
+                Visitor,
+                Platform,
+                Project,
+                Staff,
+                Tag,
+                AIProvider,
+                AIModel,
+                SystemSetup,
+                VisitorSession,
+                VisitorActivity,
+                VisitorAssignmentRule,
+                VisitorWaitingQueue,
+                VisitorTag,
+                VisitorCustomerUpdate,
+                VisitorAIProfile,
+                VisitorAIInsight,
+                VisitorSystemInfo,
+                VisitorAssignmentHistory,
+                ChatFile,
+                Permission,
+                ChannelMember,
+                ChannelMemoryClearance,
+                ProjectAIConfig,
+                AIProviderDefaultModel,
+                ProjectOnboardingProgress,
+                StoreCredential,
+            ],
+        )
+        
+        logger.info("✅ Beanie ODM initialized successfully")
+        logger.info(f"Using MongoDB database: {settings.MONGODB_DB_NAME}")
+        
+    except Exception as e:
+        logger.error(f"Failed to connect to MongoDB: {e}")
+        raise
 
 
 async def close_db() -> None:
-    """Close database connections."""
-    logger.info("Closing database connections")
-    await async_engine.dispose()
-    sync_engine.dispose()
-    logger.info("Database connections closed")
+    """Close MongoDB connection."""
+    global mongodb_client
+    if mongodb_client:
+        logger.info("Closing MongoDB connection")
+        mongodb_client.close()
+        logger.info("✅ MongoDB connection closed")
 
 
 # Database health check
 async def check_db_health() -> bool:
     """
-    Check database connectivity.
+    Check MongoDB connectivity.
     
     Returns:
-        bool: True if database is healthy, False otherwise
+        bool: True if MongoDB is healthy, False otherwise
     """
     try:
-        async with AsyncSessionLocal() as session:
-            await session.execute("SELECT 1")
-            logger.debug("Database health check passed")
-            return True
+        if mongodb_client is None:
+            logger.error("MongoDB client not initialized")
+            return False
+        
+        await mongodb_client.admin.command('ping')
+        logger.debug("MongoDB health check passed")
+        return True
     except Exception as e:
-        logger.error(f"Database health check failed: {e}")
+        logger.error(f"MongoDB health check failed: {e}")
         return False

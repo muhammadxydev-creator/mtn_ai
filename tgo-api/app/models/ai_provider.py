@@ -1,125 +1,46 @@
-"""LLM Provider (AIProvider) model."""
+"""AIProvider model for MongoDB."""
 
 from datetime import datetime
-from typing import List, Optional
-from uuid import UUID, uuid4
+from enum import Enum
+from typing import Optional
+from uuid import UUID
 
-from sqlalchemy import Boolean, ForeignKey, String, Text, func
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.core.database import Base
+from beanie import Document
+from pydantic import Field
 
 
-class AIProvider(Base):
-    """Configuration for a Large Language Model provider per project.
-
-    Examples of provider: "openai", "anthropic", "dashscope", "azure_openai".
-    """
-
-    __tablename__ = "api_ai_providers"
-
-    # Primary key
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-
-    # Foreign keys
-    project_id: Mapped[UUID] = mapped_column(
-        ForeignKey("api_projects.id", ondelete="CASCADE"),
-        nullable=False,
-        comment="Associated project ID for multi-tenant isolation",
-    )
-
-    # Basic fields
-    provider: Mapped[str] = mapped_column(
-        String(50),
-        nullable=False,
-        comment="Provider key (e.g., openai, anthropic, dashscope, azure_openai)",
-    )
-    name: Mapped[str] = mapped_column(
-        String(100),
-        nullable=False,
-        comment="Display name / alias shown in UI",
-    )
-    api_key: Mapped[str] = mapped_column(
-        String(500),
-        nullable=False,
-        comment="API key/credential used to call the provider",
-    )
-    api_base_url: Mapped[Optional[str]] = mapped_column(
-        String(255),
-        nullable=True,
-        comment="Base URL for the provider API (if applicable)",
-    )
-
-    default_model: Mapped[Optional[str]] = mapped_column(
-        String(100),
-        nullable=True,
-        comment="Default model identifier to use",
-    )
-
-    config: Mapped[Optional[dict]] = mapped_column(
-        JSONB,
-        nullable=True,
-        comment="Additional provider-specific configuration",
-    )
-    is_active: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=True,
-        comment="Whether this provider configuration is enabled",
-    )
-
-    # Store metadata
-    store_resource_id: Mapped[Optional[str]] = mapped_column(
-        String(100),
-        nullable=True,
-        comment="Store resource ID if provider is from store",
-    )
-    is_from_store: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        comment="Whether this provider was created from store",
-    )
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        nullable=False,
-        default=func.now(),
-        comment="Creation timestamp",
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        nullable=False,
-        default=func.now(),
-        onupdate=func.now(),
-        comment="Last update timestamp",
-    )
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(
-        nullable=True,
-        comment="Soft deletion timestamp",
-    )
-
-    # Sync metadata
-    last_synced_at: Mapped[Optional[datetime]] = mapped_column(
-        nullable=True,
-        comment="Last synced to AI service timestamp",
-    )
-    sync_status: Mapped[Optional[str]] = mapped_column(
-        String(20),
-        nullable=True,
-        comment="Sync status: pending|synced|failed",
-    )
-    sync_error: Mapped[Optional[str]] = mapped_column(
-        Text,
-        nullable=True,
-        comment="Last sync error message",
-    )
+class AIProviderType(str, Enum):
+    """AI Provider type enumeration."""
+    OPENAI = "openai"
+    ANTHROPIC = "anthropic"
+    GOOGLE = "google"
+    AZURE = "azure"
+    CUSTOM = "custom"
 
 
-    # Relationships
-    project: Mapped["Project"] = relationship("Project", back_populates="ai_providers", lazy="select")
-    models: Mapped[List["AIModel"]] = relationship("AIModel", back_populates="ai_provider", cascade="all, delete-orphan")
+class AIProvider(Document):
+    """AIProvider model for AI service providers in MongoDB."""
 
-    def __repr__(self) -> str:
-        return f"<AIProvider(id={self.id}, provider='{self.provider}', name='{self.name}')>"
+    project_id: UUID = Field(..., description="Associated project ID")
+    name: str = Field(..., max_length=100, description="Provider name")
+    provider_type: str = Field(..., max_length=50, description="Provider type")
+    api_key: str = Field(..., max_length=500, description="API key for the provider")
+    api_endpoint: Optional[str] = Field(None, max_length=500, description="Custom API endpoint")
+    is_active: bool = Field(default=True, description="Whether provider is active")
+    config: Optional[dict] = Field(default_factory=dict, description="Provider-specific configuration")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    deleted_at: Optional[datetime] = None
 
+    class Settings:
+        name = "api_ai_providers"
+        indexes = [
+            [("project_id", 1)],
+            [("provider_type", 1)],
+            [("is_active", 1)],
+            [("deleted_at", 1)],
+        ]
+
+    def is_deleted(self) -> bool:
+        """Check if the provider is soft deleted."""
+        return self.deleted_at is not None

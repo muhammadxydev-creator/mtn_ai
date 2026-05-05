@@ -1,73 +1,28 @@
-"""Default model templates per provider."""
+"""AIProviderDefaultModel model for MongoDB."""
 
 from datetime import datetime
-from uuid import UUID, uuid4
+from typing import Optional
+from uuid import UUID
 
-from sqlalchemy import Boolean, Integer, String, UniqueConstraint, func
-from sqlalchemy.orm import Mapped, mapped_column
-
-from app.core.database import Base
+from beanie import Document
+from pydantic import Field
 
 
-class AIProviderDefaultModel(Base):
-    """Database-backed default model templates used when creating providers."""
+class AIProviderDefaultModel(Document):
+    """AIProviderDefaultModel model for storing default model settings per provider in MongoDB."""
 
-    __tablename__ = "api_ai_provider_default_models"
-    __table_args__ = (
-        UniqueConstraint(
-            "provider",
-            "model_id",
-            name="uq_ai_provider_default_models_provider_model_id",
-        ),
-    )
+    project_id: UUID = Field(..., description="Associated project ID")
+    provider_id: UUID = Field(..., description="Associated AI provider ID")
+    model_id: UUID = Field(..., description="Default AI model ID")
+    model_type: str = Field(..., max_length=50, description="Model type (chat, completion, etc.)")
+    is_active: bool = Field(default=True, description="Whether this default is active")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    provider: Mapped[str] = mapped_column(
-        String(50),
-        nullable=False,
-        index=True,
-        comment="Provider key (e.g. openai, dashscope, openai_compatible)",
-    )
-    model_id: Mapped[str] = mapped_column(
-        String(100),
-        nullable=False,
-        comment="Model identifier",
-    )
-    model_name: Mapped[str] = mapped_column(
-        String(100),
-        nullable=False,
-        comment="Display name shown in UI when seeded",
-    )
-    model_type: Mapped[str] = mapped_column(
-        String(20),
-        nullable=False,
-        default="chat",
-        comment="Model type: chat or embedding",
-    )
-    sort_order: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-        default=0,
-        comment="Ordering used when choosing first default model",
-    )
-    is_active: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=True,
-        comment="Whether this default template is enabled",
-    )
-    created_at: Mapped[datetime] = mapped_column(
-        nullable=False,
-        default=func.now(),
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        nullable=False,
-        default=func.now(),
-        onupdate=func.now(),
-    )
-
-    def __repr__(self) -> str:  # pragma: no cover - debug repr
-        return (
-            "AIProviderDefaultModel("
-            f"provider={self.provider!r}, model_id={self.model_id!r}, model_type={self.model_type!r})"
-        )
+    class Settings:
+        name = "api_ai_provider_default_models"
+        indexes = [
+            [("project_id", 1)],
+            [("provider_id", 1)],
+            [("model_type", 1)],
+        ]

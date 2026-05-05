@@ -1,13 +1,12 @@
 """Platform endpoints."""
 
 from datetime import datetime
-from typing import List, Any
+from typing import List, Any, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Header, UploadFile, File
-from sqlalchemy.orm import Session, joinedload, contains_eager
 
-from app.core.database import get_db
+from app.core.database import get_current_project_id
 from app.core.logging import get_logger
 from app.core.security import generate_api_key, get_current_active_user, require_permission
 from app.models import Platform, PlatformTypeDefinition, Staff
@@ -23,6 +22,14 @@ from app.schemas import (
 )
 import httpx
 from app.core.config import settings
+from beanie import PydanticObjectId
+
+# Platform type definitions are static data
+PLATFORM_TYPE_DEFINITIONS = [
+    {"id": "web", "name": "网页", "name_en": "Web", "is_supported": True},
+    {"id": "wechat", "name": "微信", "name_en": "WeChat", "is_supported": True},
+    {"id": "whatsapp", "name": "WhatsApp", "name_en": "WhatsApp", "is_supported": True},
+]
 
 
 logger = get_logger("endpoints.platforms")

@@ -2,7 +2,7 @@
 
 from typing import List, Optional
 
-from pydantic import Field, PostgresDsn
+from pydantic import Field, AnyUrl
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -56,30 +56,14 @@ class Settings(BaseSettings):
         description="JWT algorithm"
     )
 
-    # Database
-    DATABASE_URL: PostgresDsn = Field(
+    # MongoDB
+    MONGODB_URL: str = Field(
         ...,
-        description="PostgreSQL database URL"
+        description="MongoDB connection URL (e.g., mongodb+srv://user:pass@cluster.mongodb.net/dbname)"
     )
-    DATABASE_POOL_SIZE: int = Field(
-        default=10,
-        description="Database connection pool size",
-        gt=0
-    )
-    DATABASE_MAX_OVERFLOW: int = Field(
-        default=20,
-        description="Database connection pool max overflow",
-        gt=0
-    )
-    DATABASE_POOL_TIMEOUT: int = Field(
-        default=30,
-        description="Database connection pool timeout in seconds",
-        gt=0
-    )
-    DATABASE_POOL_RECYCLE: int = Field(
-        default=3600,
-        description="Database connection pool recycle time in seconds",
-        gt=0
+    MONGODB_DB_NAME: str = Field(
+        default="tgo_api",
+        description="MongoDB database name"
     )
 
     # CORS
@@ -584,34 +568,6 @@ class Settings(BaseSettings):
     def is_production(self) -> bool:
         """Check if running in production environment."""
         return self.ENVIRONMENT.lower() in ("production", "prod")
-
-    @property
-    def database_url_sync(self) -> str:
-        """Get synchronous database URL (force psycopg2 driver)."""
-        url = str(self.DATABASE_URL)
-        if "postgresql+asyncpg://" in url:
-            return url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
-        if "postgresql+psycopg2://" in url:
-            return url
-        if "postgresql://" in url:
-            return url.replace("postgresql://", "postgresql+psycopg2://")
-        # Fallback: enforce psycopg2
-        scheme, rest = url.split("://", 1)
-        return f"postgresql+psycopg2://{rest}"
-
-    @property
-    def database_url_async(self) -> str:
-        """Get asynchronous database URL (force asyncpg driver)."""
-        url = str(self.DATABASE_URL)
-        if "postgresql+asyncpg://" in url:
-            return url
-        if "postgresql+psycopg2://" in url:
-            return url.replace("postgresql+psycopg2://", "postgresql+asyncpg://")
-        if "postgresql://" in url:
-            return url.replace("postgresql://", "postgresql+asyncpg://")
-        # Fallback: enforce asyncpg
-        scheme, rest = url.split("://", 1)
-        return f"postgresql+asyncpg://{rest}"
 
     # Supabase Configuration
     SUPABASE_URL: Optional[str] = Field(

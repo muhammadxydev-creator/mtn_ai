@@ -8,7 +8,6 @@ from uuid import UUID, uuid4
 
 from fastapi import HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
-from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -48,19 +47,14 @@ ai_client = AIServiceClient()
 # Validation & Helpers
 # ============================================================================
 
-def validate_platform_and_project(
+async def validate_platform_and_project(
     platform_api_key: str,
-    db: Session
 ) -> tuple[Platform, Project]:
     """Validate Platform API key and return platform with project."""
-    platform = (
-        db.query(Platform)
-        .filter(
-            Platform.api_key == platform_api_key,
-            Platform.is_active.is_(True),
-            Platform.deleted_at.is_(None),
-        )
-        .first()
+    platform = await Platform.find_one(
+        Platform.api_key == platform_api_key,
+        Platform.is_active == True,
+        Platform.deleted_at == None,
     )
     if not platform:
         raise HTTPException(
@@ -68,7 +62,8 @@ def validate_platform_and_project(
             detail="Invalid API key"
         )
 
-    project = platform.project
+    # Get project using project_id from platform
+    project = await Project.get(platform.project_id)
     if not project or not project.api_key:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -105,8 +100,7 @@ def sse_format(event: Dict[str, Any]) -> str:
     return f"event: {event_type}\ndata: {data}\n\n"
 
 
-def authenticate_staff_or_platform(
-    db: Session,
+async def authenticate_staff_or_platform(
     credentials: Optional[HTTPAuthorizationCredentials] = None,
     platform_api_key: Optional[str] = None,
 ) -> tuple[Optional[Staff], Optional[Platform]]:
@@ -120,21 +114,16 @@ def authenticate_staff_or_platform(
         if payload:
             username = payload.get("sub")
             if username:
-                current_user = (
-                    db.query(Staff)
-                    .filter(Staff.username == username, Staff.deleted_at.is_(None))
-                    .first()
+                current_user = await Staff.find_one(
+                    Staff.username == username,
+                    Staff.deleted_at == None,
                 )
 
     if not current_user and platform_api_key:
-        platform = (
-            db.query(Platform)
-            .filter(
-                Platform.api_key == platform_api_key,
-                Platform.is_active.is_(True),
-                Platform.deleted_at.is_(None),
-            )
-            .first()
+        platform = await Platform.find_one(
+            Platform.api_key == platform_api_key,
+            Platform.is_active == True,
+            Platform.deleted_at == None,
         )
 
     return current_user, platform
@@ -550,7 +539,6 @@ async def send_user_message_to_wukongim(
 # ============================================================================
 
 async def get_or_create_visitor(
-    db: Session,
     platform: Platform,
     platform_open_id: str,
     nickname: Optional[str] = None,
@@ -558,33 +546,26 @@ async def get_or_create_visitor(
 ) -> tuple[Visitor, bool]:
     """
     获取或创建访客。
-    
+
     如果访客存在且信息发生变化，自动更新并通知 WuKongIM。
-    
+
     Args:
-        db: 数据库会话
         platform: 平台对象
-        platform_open_id: 平台用户ID
+        platform_open_id: 平台用户 ID
         nickname: 昵称（可选）
-        avatar_url: 头像URL（可选）
-        
+        avatar_url: 头像 URL（可选）
+
     Returns:
-        tuple[Visitor, bool]: (访客对象, 是否发生了更新)
+        tuple[Visitor, bool]: (访客对象，是否发生了更新)
     """
-    visitor = (
-        db.query(Visitor)
-        .filter(
-            Visitor.platform_id == platform.id,
-            Visitor.platform_open_id == platform_open_id,
-            Visitor.deleted_at.is_(None),
-        )
-        .first()
+    visitor = await Visitor.find_one(
+        Visitor.platform_id == platform.id,
+        Visitor.platform_open_id == platform_open_id,
+        Visitor.deleted_at == None,
     )
-    
+
     if not visitor:
-        # 创建新访客
         visitor = await visitor_service.create_visitor_with_channel(
-            db=db,
             platform=platform,
             platform_open_id=platform_open_id,
             name=nickname, # 同时设置 name
@@ -619,6 +600,6 @@ async def get_or_create_visitor(
 
         if changed:
             visitor.updated_at = datetime.utcnow()
-            db.commit()
-    
+            await visitor.save()
+
     return visitor, changed

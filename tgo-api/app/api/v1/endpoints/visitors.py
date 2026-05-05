@@ -336,7 +336,7 @@ async def create_visitor(
 
     logger.info(f"Created visitor {visitor.id} for platform {platform_id}")
 
-    await notify_visitor_profile_updated(db, visitor)
+    await notify_visitor_profile_updated(visitor)
 
     response = VisitorResponse.model_validate(visitor)
     populate_visitor_ai_settings(response, visitor.platform)
@@ -401,7 +401,6 @@ async def register_visitor(
         # Use visitor_service.create_visitor_with_channel for complete setup
         # If normalized_open_id is None, visitor.id will be used as platform_open_id
         visitor = await visitor_service.create_visitor_with_channel(
-            db=db,
             platform=platform,
             platform_open_id=normalized_open_id,
             name=req.name,
@@ -462,24 +461,21 @@ async def register_visitor(
                 setattr(visitor, field, update_data[field])
                 any_updated = True
         if any_updated:
-            db.commit()
-            db.refresh(visitor)
+            await visitor.save()
             profile_changed = True
 
-    system_info_changed = visitor_service.upsert_visitor_system_info(db, visitor, platform, req.system_info)
+    system_info_changed = await visitor_service.upsert_visitor_system_info(visitor, platform, req.system_info)
     if system_info_changed:
-        db.commit()
-        db.refresh(visitor)
         profile_changed = True
 
     # 3) Ensure WuKongIM channel exists
     # For new visitors, channel was already created by visitor_service.create_visitor_with_channel or visitor_service.ensure_visitor_channel
     # For existing visitors, we need to ensure channel exists
     if not is_new_visitor:
-        await visitor_service.ensure_visitor_channel(db, visitor, platform)
+        await visitor_service.ensure_visitor_channel(visitor, platform)
 
     if profile_changed:
-        await notify_visitor_profile_updated(db, visitor)
+        await notify_visitor_profile_updated(visitor)
 
     # 3c) Register or login visitor to WuKongIM and generate token for IM login
     im_token = str(uuid.uuid4())
@@ -1132,7 +1128,7 @@ async def set_visitor_attributes(
         action = "Updated"
     logger.info(f"{action} attributes for visitor {visitor.id}")
 
-    await notify_visitor_profile_updated(db, visitor)
+    await notify_visitor_profile_updated(visitor)
 
     response = VisitorResponse.model_validate(visitor)
     populate_visitor_ai_settings(response, visitor.platform)
@@ -1188,7 +1184,7 @@ async def update_visitor(
 
     logger.info(f"Updated visitor {visitor.id}")
 
-    await notify_visitor_profile_updated(db, visitor)
+    await notify_visitor_profile_updated(visitor)
 
     response = VisitorResponse.model_validate(visitor)
     populate_visitor_ai_settings(response, visitor.platform)
@@ -1228,7 +1224,7 @@ async def enable_ai_for_visitor(
     db.refresh(visitor)
 
     logger.info("AI enabled for visitor %s by user %s", str(visitor.id), current_user.username)
-    await notify_visitor_profile_updated(db, visitor)
+    await notify_visitor_profile_updated(visitor)
     response = VisitorResponse.model_validate(visitor)
     populate_visitor_ai_settings(response, visitor.platform)
     localize_visitor_response_intent(response, request.headers.get("Accept-Language"))
@@ -1266,7 +1262,7 @@ async def disable_ai_for_visitor(
     db.refresh(visitor)
 
     logger.info("AI disabled for visitor %s by user %s", str(visitor.id), current_user.username)
-    await notify_visitor_profile_updated(db, visitor)
+    await notify_visitor_profile_updated(visitor)
     response = VisitorResponse.model_validate(visitor)
     populate_visitor_ai_settings(response, visitor.platform)
     localize_visitor_response_intent(response, request.headers.get("Accept-Language"))

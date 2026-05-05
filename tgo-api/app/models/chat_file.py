@@ -1,46 +1,36 @@
-"""Chat file metadata model."""
+"""ChatFile model for MongoDB."""
 
 from datetime import datetime
 from typing import Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from sqlalchemy import ForeignKey, String, Integer, func
-from sqlalchemy.orm import Mapped, mapped_column
-
-from app.core.database import Base
+from beanie import Document
+from pydantic import Field
 
 
-class ChatFile(Base):
-    """Stores metadata for uploaded chat files."""
+class ChatFile(Document):
+    """ChatFile model for files shared in chat channels in MongoDB."""
 
-    __tablename__ = "api_chat_files"
+    channel_id: UUID = Field(..., description="Associated channel ID")
+    project_id: UUID = Field(..., description="Associated project ID")
+    file_name: str = Field(..., max_length=255, description="Original file name")
+    file_path: str = Field(..., max_length=512, description="Storage path of the file")
+    file_size: int = Field(default=0, description="File size in bytes")
+    file_type: str = Field(..., max_length=100, description="MIME type of the file")
+    uploaded_by: UUID = Field(..., description="User ID who uploaded the file")
+    message_id: Optional[UUID] = Field(None, description="Associated message ID if any")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    deleted_at: Optional[datetime] = None
 
-    # Primary key
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    class Settings:
+        name = "api_chat_files"
+        indexes = [
+            [("channel_id", 1)],
+            [("project_id", 1)],
+            [("uploaded_by", 1)],
+            [("deleted_at", 1)],
+        ]
 
-    # Multi-tenant isolation
-    project_id: Mapped[UUID] = mapped_column(
-        ForeignKey("api_projects.id", ondelete="CASCADE"),
-        nullable=False,
-        comment="Associated project ID",
-    )
-
-    # Channel context
-    channel_id: Mapped[str] = mapped_column(String(255), nullable=False, comment="Channel identifier")
-    channel_type: Mapped[int] = mapped_column(Integer, nullable=False, comment="Channel type code")
-
-    # File metadata
-    file_name: Mapped[str] = mapped_column(String(255), nullable=False, comment="Original filename")
-    file_path: Mapped[str] = mapped_column(String(1024), nullable=False, comment="Relative path from base upload directory")
-    file_size: Mapped[int] = mapped_column(Integer, nullable=False, comment="File size in bytes")
-    file_type: Mapped[str] = mapped_column(String(255), nullable=False, comment="MIME type")
-
-    # Who uploaded
-    uploaded_by_staff_id: Mapped[Optional[UUID]] = mapped_column(nullable=True, comment="Staff ID if uploaded by staff")
-    uploaded_by_platform_id: Mapped[Optional[UUID]] = mapped_column(nullable=True, comment="Platform ID if uploaded via platform API key")
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(nullable=False, default=func.now(), comment="Creation time")
-    updated_at: Mapped[datetime] = mapped_column(nullable=False, default=func.now(), onupdate=func.now(), comment="Update time")
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(nullable=True, comment="Soft deletion time")
-
+    def is_deleted(self) -> bool:
+        """Check if the file is soft deleted."""
+        return self.deleted_at is not None

@@ -141,14 +141,11 @@ async def sync_configs_with_retry(
     return False, last_err, None
 
 
-async def sync_config_with_retry_and_update(db, item: ProjectAIConfig) -> tuple[bool, Optional[str]]:
+async def sync_config_with_retry_and_update(item: ProjectAIConfig) -> tuple[bool, Optional[str]]:
     """Sync one config with retries and update its sync fields in DB.
 
     Returns (ok, err_msg).
     """
-    from sqlalchemy.orm import Session  # local import to avoid header changes
-    assert isinstance(db, Session)
-
     ok, err, _ = await sync_config_with_retry(item)
     item.last_synced_at = datetime.utcnow()
     if ok:
@@ -157,10 +154,6 @@ async def sync_config_with_retry_and_update(db, item: ProjectAIConfig) -> tuple[
     else:
         item.sync_status = "failed"
         item.sync_error = str(err) if err else "unknown error"
-    db.commit()
-    try:
-        db.refresh(item)
-    except Exception:
-        pass
+    await item.save()
     return ok, err
 

@@ -1,45 +1,59 @@
 ```
-# Dependencies
-.venv/
-venv/
+# Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
-node_modules/
-
-# Build artifacts
-dist/
-build/
-target/
-*.egg-info/
-
-# Environment
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
 .env
 .env.local
 .env.*
 
-# Editors
+# Alembic
+alembic/versions/
+
+# Database
+*.db
+*.db-journal
+
+# Logs
+*.log
+
+# Coverage
+.coverage
+htmlcov/
+.coverage.*
+
+# Testing
+.pytest_cache/
+.mypy_cache/
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-
-# Logs
-*.log
+*.tmp
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Testing
-.coverage
-htmlcov/
-.coverage.*
-.cache
-.pytest_cache/
-.mypy_cache/
-
-# Alembic
-alembic/versions/*.py
+# Compiled and binary files
+*.o
+*.obj
+*.out
+*.exe
+*.dll
+*.so
+*.a
 ```

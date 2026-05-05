@@ -1,58 +1,29 @@
+"""StoreCredential model for MongoDB."""
+
 from datetime import datetime
-from uuid import UUID, uuid4
 from typing import Optional
+from uuid import UUID
 
-from sqlalchemy import String, DateTime, ForeignKey, func
-from sqlalchemy.orm import Mapped, mapped_column
-
-from app.core.database import Base
+from beanie import Document
+from pydantic import Field
 
 
-class StoreCredential(Base):
-    """Store credentials for a project."""
+class StoreCredential(Document):
+    """StoreCredential model for storing third-party service credentials in MongoDB."""
 
-    __tablename__ = "api_store_credentials"
+    project_id: UUID = Field(..., description="Associated project ID")
+    store_type: str = Field(..., max_length=50, description="Type of store (e.g., oauth, api_key)")
+    store_name: str = Field(..., max_length=100, description="Name of the credential store")
+    credential_data: dict = Field(default_factory=dict, description="Encrypted credential data")
+    is_active: bool = Field(default=True, description="Whether credential is active")
+    expires_at: Optional[datetime] = Field(None, description="Credential expiration time")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
-    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
-    project_id: Mapped[UUID] = mapped_column(
-        ForeignKey("api_projects.id", ondelete="CASCADE"), 
-        unique=True, 
-        nullable=False,
-        comment="Associated project ID"
-    )
-    
-    store_user_id: Mapped[str] = mapped_column(
-        String(255), 
-        nullable=False,
-        comment="User ID in the Store"
-    )
-    store_email: Mapped[str] = mapped_column(
-        String(255), 
-        nullable=False,
-        comment="Email associated with the Store account"
-    )
-    
-    # Encrypted fields
-    api_key_encrypted: Mapped[str] = mapped_column(
-        String(1024), 
-        nullable=False,
-        comment="Encrypted API Key"
-    )
-    refresh_token_encrypted: Mapped[Optional[str]] = mapped_column(
-        String(1024), 
-        nullable=True,
-        comment="Encrypted Refresh Token"
-    )
-    
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), 
-        nullable=False, 
-        server_default=func.now()
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), 
-        nullable=False, 
-        server_default=func.now(), 
-        onupdate=func.now()
-    )
+    class Settings:
+        name = "api_store_credentials"
+        indexes = [
+            [("project_id", 1)],
+            [("store_type", 1)],
+            [("store_name", 1)],
+        ]

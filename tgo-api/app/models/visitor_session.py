@@ -1,11 +1,19 @@
 """VisitorSession model for MongoDB."""
 
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 from uuid import UUID
 
 from beanie import Document
 from pydantic import Field
+
+
+class SessionStatus(str, Enum):
+    """Session status enumeration."""
+    
+    OPEN = "open"
+    CLOSED = "closed"
 
 
 class VisitorSession(Document):

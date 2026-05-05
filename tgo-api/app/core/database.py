@@ -66,6 +66,7 @@ async def init_db() -> None:
         from app.models import (
             Visitor,
             Platform,
+            PlatformTypeDefinition,
             Project,
             Staff,
             Tag,
@@ -101,6 +102,7 @@ async def init_db() -> None:
             document_models=[
                 Visitor,
                 Platform,
+                PlatformTypeDefinition,
                 Project,
                 Staff,
                 Tag,

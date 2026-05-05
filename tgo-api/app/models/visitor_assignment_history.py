@@ -1,11 +1,23 @@
 """VisitorAssignmentHistory model for MongoDB."""
 
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 from uuid import UUID
 
 from beanie import Document
 from pydantic import Field
+
+
+class AssignmentSource(str, Enum):
+    """Assignment source enumeration."""
+    LLM = "llm"
+    RULE = "rule"
+    MANUAL = "manual"
+    TRANSFER = "transfer"
+    REJECT = "reject"
+    ROUND_ROBIN = "round_robin"
+    LOAD_BALANCE = "load_balance"
 
 
 class VisitorAssignmentHistory(Document):
